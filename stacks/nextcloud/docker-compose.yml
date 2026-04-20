@@ -1,0 +1,20 @@
+services:
+  nextcloud:
+    image: nextcloud:stable
+    container_name: nextcloud
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    env_file:
+      - .env
+    volumes:
+      - /opt/nextcloud/html:/var/www/html
+    networks:
+      - apiaries-trunk_hive-net
+      - assembly_apiaries_net
+
+networks:
+  apiaries-trunk_hive-net:
+    external: true
+  assembly_apiaries_net:
+    external: true
