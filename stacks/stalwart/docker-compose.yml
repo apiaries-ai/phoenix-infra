@@ -1,0 +1,22 @@
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:latest
+    container_name: stalwart
+    restart: unless-stopped
+    ports:
+      - "25:25"
+      - "143:143"
+      - "465:465"
+      - "587:587"
+      - "993:993"
+      - "4190:4190"
+      - "8080:8080"
+    volumes:
+      - /opt/stalwart:/opt/stalwart
+    networks:
+      - apiaries-trunk_hive-net
+      - bridge
+
+networks:
+  apiaries-trunk_hive-net:
+    external: true
