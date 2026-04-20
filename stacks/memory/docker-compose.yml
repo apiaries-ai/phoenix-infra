@@ -1,0 +1,13 @@
+services:
+  apiaries_memory_agent:
+    image: apiaries-memory-agent-memory-agent:latest
+    container_name: apiaries_memory_agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - apiaries-trunk_hive-net
+
+networks:
+  apiaries-trunk_hive-net:
+    external: true

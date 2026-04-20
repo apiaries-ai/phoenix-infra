@@ -1,0 +1,18 @@
+services:
+  apiaries_crm:
+    image: apiaries/crm:latest
+    container_name: apiaries_crm
+    restart: unless-stopped
+    ports:
+      - "8003:8000"
+    env_file:
+      - .env
+    networks:
+      - apiaries-trunk_hive-net
+      - assembly_apiaries_net
+
+networks:
+  apiaries-trunk_hive-net:
+    external: true
+  assembly_apiaries_net:
+    external: true

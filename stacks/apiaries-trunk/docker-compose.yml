@@ -1,0 +1,309 @@
+networks:
+  hive-net:
+    name: apiaries-trunk_hive-net
+    driver: bridge
+  assembly_apiaries_net:
+    external: true
+volumes:
+  hive-db-data:
+    name: apiaries-trunk_hive-db-data
+  n8n-data:
+    name: apiaries-trunk_n8n-data
+  agent-zero-data:
+    name: apiaries-trunk_agent-zero-data
+  hermes-data: null
+services:
+  hive-db:
+    container_name: hive-db
+    image: postgres:16-alpine
+    command:
+    - postgres
+    - -c
+    - unix_socket_directories=
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bienenstaat
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    networks:
+      hive-net: {}
+    ports:
+    - 5432:5432
+    volumes:
+    - hive-db-data:/var/lib/postgresql/data
+    tmpfs:
+    - /var/run/postgresql
+  apiaries-backend:
+    container_name: apiaries-backend
+    build:
+      context: /opt/apiaries-trunk/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      hive-db:
+        condition: service_started
+        required: true
+    environment:
+      ACCESS_TOKEN_EXPIRE_MINUTES: '30'
+      AGENT_HEALTH_TIMEOUT: '5.0'
+      AGENT_ZERO_HEALTH_URL: http://agent-zero:80/
+      APP_NAME: apiaries.ai API
+      APP_VERSION: 0.1.0
+      DATABASE_URL: postgresql://apiaries:${DB_PASSWORD}@hive-db:5432/bienenstaat
+      DB_MAX_OVERFLOW: '20'
+      DB_POOL_RECYCLE: '1800'
+      DB_POOL_SIZE: '10'
+      DB_POOL_TIMEOUT: '30'
+      DEBUG: 'false'
+      ENVIRONMENT: development
+      FALLBACK_DB_HOST: hive-db
+      FALLBACK_DB_PASSWORD: ${DB_PASSWORD}
+      FALLBACK_DB_PORT: '5432'
+      FALLBACK_DB_USER: apiaries
+      JWT_ALGORITHM: HS256
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: INFO
+      N8N_HEALTH_URL: http://n8n:5678/healthz
+      PRIMARY_DB_HOST: hive-db
+      PRIMARY_DB_PASSWORD: ${DB_PASSWORD}
+      PRIMARY_DB_PORT: '5432'
+      PRIMARY_DB_USER: apiaries
+      REFRESH_TOKEN_EXPIRE_DAYS: '7'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      hive-net: {}
+    ports:
+    - 8001:8000
+    security_opt:
+    - seccomp=unconfined
+    - apparmor=unconfined
+    volumes:
+    - /opt/agents/hivemaster:/opt/agents/hivemaster:ro
+  n8n:
+    container_name: n8n
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      DB_TYPE: sqlite
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: '5678'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://localhost:5678/healthz || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      hive-net: {}
+    ports:
+    - 5678:5678
+    volumes:
+    - n8n-data:/home/node/.n8n
+  agent-zero:
+    container_name: agent-zero
+    image: agent0ai/agent-zero:latest
+    restart: unless-stopped
+    environment:
+      A0_PORT: '80'
+      A0_SET_mcp_server_token: M05aC9qUgzheQQBf
+      A0_PERSISTENT_RUNTIME_ID: hivemaster-test
+      A0_SET_chat_model_provider: other
+      A0_SET_chat_model_name: hive-main
+      A0_SET_util_model_provider: other
+      A0_SET_util_model_name: hive-main
+      A0_SET_util_model_api_base: http://172.23.0.1:4001/v1
+      A0_SET_embed_model_provider: other
+      A0_SET_embed_model_name: hive-embed
+      A0_SET_embed_model_api_base: http://172.23.0.1:4001/v1
+      A0_SET_browser_model_provider: other
+      A0_SET_browser_model_name: hive-main
+      A0_SET_browser_model_api_base: http://172.23.0.1:4001/v1
+      A0_SET_chat_model_api_base: http://172.23.0.1:4001/v1
+      A0_SET_api_key_other: sk-litellm-proxy
+      OPENAI_API_KEY: sk-litellm-proxy
+    networks: &id001
+      hive-net: {}
+    ports:
+    - 50080:80
+    volumes:
+    - agent-zero-data:/a0/storage
+    - /opt/apiaries-ai:/workspace
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /root/.agent-zero-ssh:/root/.ssh:ro
+    - /root/.agent-zero-gitconfig:/root/.gitconfig:ro
+    - /opt/apiaries-trunk/docker-compose.yml:/workspace-config/docker-compose.yml:ro
+    - /root/agent-zero/overrides/settings.json:/a0/tmp/settings.json
+    - /root/agent-zero-overrides/.env:/a0/.env
+    security_opt: &id002
+    - seccomp=unconfined
+    - apparmor=unconfined
+  hivemaster-loop:
+    container_name: hivemaster-loop
+    build:
+      context: /opt/apiaries-trunk/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    user: root
+    command:
+    - python
+    - -m
+    - app.agents.hivemaster_loop
+    depends_on:
+      agent-zero:
+        condition: service_started
+        required: true
+      apiaries-backend:
+        condition: service_started
+        required: true
+      hive-db:
+        condition: service_started
+        required: true
+    environment:
+      A0_API_KEY: M05aC9qUgzheQQBf
+      ACCESS_TOKEN_EXPIRE_MINUTES: '30'
+      AGENT_HEALTH_TIMEOUT: '5.0'
+      AGENT_ZERO_HEALTH_URL: http://agent-zero:80/
+      AGENT_ZERO_URL: http://agent-zero:80
+      APIARIES_BACKEND_URL: http://apiaries-backend:8000
+      APP_NAME: apiaries.ai API
+      APP_VERSION: 0.1.0
+      DATABASE_URL: postgresql://apiaries:${DB_PASSWORD}@hive-db:5432/bienenstaat
+      DB_MAX_OVERFLOW: '20'
+      DB_POOL_RECYCLE: '1800'
+      DB_POOL_SIZE: '10'
+      DB_POOL_TIMEOUT: '30'
+      DEBUG: 'false'
+      ENVIRONMENT: development
+      FALLBACK_DB_HOST: hive-db
+      FALLBACK_DB_PASSWORD: ${DB_PASSWORD}
+      FALLBACK_DB_PORT: '5432'
+      FALLBACK_DB_USER: apiaries
+      HIVE_LOOP_NAME: hivemaster-loop
+      JWT_ALGORITHM: HS256
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: INFO
+      N8N_HEALTH_URL: http://n8n:5678/healthz
+      PRIMARY_DB_HOST: hive-db
+      PRIMARY_DB_PASSWORD: ${DB_PASSWORD}
+      PRIMARY_DB_PORT: '5432'
+      PRIMARY_DB_USER: apiaries
+      REFRESH_TOKEN_EXPIRE_DAYS: '7'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - python -c 'print(1)' || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      hive-net: {}
+    security_opt:
+    - seccomp=unconfined
+    - apparmor=unconfined
+  design-os:
+    container_name: design-os
+    build:
+      context: /opt/apiaries-trunk/design-os
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      hive-net: {}
+    ports:
+    - 3002:80
+    profiles:
+    - design
+  caddy:
+    container_name: hive-caddy
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      agent-zero:
+        condition: service_started
+        required: true
+      apiaries-backend:
+        condition: service_started
+        required: true
+      design-os:
+        condition: service_started
+        required: false
+      n8n:
+        condition: service_started
+        required: true
+    networks:
+      hive-net: {}
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - /opt/apiaries-trunk/Caddyfile:/etc/caddy/Caddyfile:ro
+    - /opt/apiaries-trunk/caddy-data:/data
+    - /opt/apiaries-trunk/caddy-config:/config
+    profiles:
+    - caddy
+  hermes-agent:
+    image: agent0ai/agent-zero:latest
+    container_name: hermes-agent
+    ports:
+    - 8181:80
+    environment:
+    - API_KEY_OTHER=sk-none
+    volumes:
+    - /root/hermes-overrides/settings.json:/a0/tmp/settings.json
+    - /root/hermes-overrides/prompts/agent.system.main.md:/a0/prompts/agent.system.main.md
+    - hermes-data:/a0/work
+    - /opt/design-os:/a0/work/design-os:rw
+    - /root/hermes-overrides/message_async.py:/a0/python/api/message_async.py
+    - /root/hermes-overrides/message.py:/a0/api/message.py
+    - /root/hermes-overrides/.env:/a0/.env
+    networks: *id001
+    restart: unless-stopped
+    security_opt: *id002
+  homepage:
+    image: nginx:mainline-alpine-slim
+    container_name: homepage
+    ports:
+    - 8092:80
+    security_opt:
+    - apparmor=unconfined
+    - seccomp=unconfined
+    volumes:
+    - /opt/apiaries/web/public:/usr/share/nginx/html:ro
+    restart: unless-stopped
+  mattermost:
+    image: mattermost/mattermost-team-edition:10.5
+    container_name: mattermost
+    restart: unless-stopped
+    ports:
+    - 8065:8065
+    volumes:
+    - /opt/apiaries-trunk/mattermost/config:/mattermost/config:rw
+    - /opt/apiaries-trunk/mattermost/data:/mattermost/data:rw
+    - /opt/apiaries-trunk/mattermost/logs:/mattermost/logs:rw
+    - /opt/apiaries-trunk/mattermost/plugins:/mattermost/plugins:rw
+    - /opt/apiaries-trunk/mattermost/client-plugins:/mattermost/client/plugins:rw
+    - /opt/apiaries-trunk/mattermost/bleve-indexes:/mattermost/bleve-indexes:rw
+    environment:
+      TZ: America/Chicago
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://hivemaster:${DB_PASSWORD}@hive-db:5432/mattermost?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_SITEURL: https://chat.apiaries.ai
+      MM_BLEVESETTINGS_INDEXDIR: /mattermost/bleve-indexes
+      MM_BLEVESETTINGS_ENABLEINDEXING: 'true'
+      MM_BLEVESETTINGS_ENABLESEARCHING: 'true'
+      MM_BLEVESETTINGS_ENABLEAUTOCOMPLETE: 'true'
+      MM_LOGSETTINGS_ENABLEDIAGNOSTICS: 'false'
+      MM_SERVICESETTINGS_ENABLELOCALMODE: 'false'
+      MM_PLUGINSETTINGS_ENABLEUPLOADS: 'true'
+    command: mattermost server
+    networks:
+    - hive-net
+    - assembly_apiaries_net
