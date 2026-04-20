@@ -1,0 +1,21 @@
+services:
+  litellm:
+    command: --config /app/config.yaml --port 4001
+    container_name: litellm-proxy
+    env_file:
+    - .env
+    environment:
+      LITELLM_MASTER_KEY: sk-hive-master-2026
+      LANGFUSE_PUBLIC_KEY: "pk-lf-YOURKEY"
+      LANGFUSE_SECRET_KEY: "sk-lf-YOURKEY"
+      LANGFUSE_HOST: "https://langfuse.apiaries.ai"
+      OPENROUTER_API_KEY: "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"
+    image: litellm-hive:latest
+    network_mode: host
+    networks: []
+    restart: unless-stopped
+    security_opt:
+    - seccomp=unconfined
+    - apparmor=unconfined
+    volumes:
+    - ./config.yaml:/app/config.yaml

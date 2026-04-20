@@ -1,0 +1,126 @@
+services:
+  langfuse-pg:
+    image: postgres:16
+    container_name: langfuse-pg
+    command: ["postgres", "-c", "unix_socket_directories="]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: langfuse_v3_db
+      POSTGRES_USER: langfuse_v3_user
+      POSTGRES_PASSWORD: Lexry2024
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - langfuse-pg-data:/var/lib/postgresql/data
+    networks:
+      - langfuse-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U langfuse_v3_user -d langfuse_v3_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: langfuse-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse_pass
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+    networks:
+      - langfuse-net
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-redis:
+    image: redis:7
+    container_name: langfuse-redis
+    restart: unless-stopped
+    command: redis-server --requirepass yourredispass
+    networks:
+      - langfuse-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "yourredispass", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-minio:
+    image: minio/minio
+    container_name: langfuse-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniopass123
+    volumes:
+      - langfuse-minio-data:/data
+    networks:
+      - langfuse-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-v3:
+    image: langfuse/langfuse:3.22.0
+    container_name: langfuse-v3
+    restart: unless-stopped
+    depends_on:
+      langfuse-pg:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://langfuse_v3_user:Lexry2024@langfuse-pg:5432/langfuse_v3_db
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse_pass
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: yourredispass
+      NEXTAUTH_URL: https://langfuse.apiaries.ai
+      NEXTAUTH_SECRET: va4lgFBVL7arXqCtD6MVifZVnkO4xZ7mNDtODslCEAM=
+      SALT: va4lgFBVL7arXqCtD6MVifZVnkO4xZ7mNDtODslCEAM=
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniopass123
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniopass123
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      PORT: "3201"
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    networks:
+      - langfuse-net
+    ports:
+      - "3201:3201"
+
+networks:
+  langfuse-net:
+    external: true
+
+volumes:
+  langfuse-pg-data:
+    external: true
+  langfuse-clickhouse-data:
+    external: true
+  langfuse-minio-data:
+    external: true

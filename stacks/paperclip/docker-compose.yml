@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: paperclip-postgres
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: paperclip2026
+      POSTGRES_DB: paperclip
+    command: ["postgres", "-c", "unix_socket_directories="]
+    ports:
+      - "5435:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U paperclip || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  server:
+    image: paperclip-server:latest
+    container_name: paperclip
+    privileged: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BETTER_AUTH_SECRET: hive-paperclip-secret-2026
+      DATABASE_URL: postgres://paperclip:paperclip2026@172.17.0.1:5435/paperclip
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_PUBLIC_URL: https://paperclip.apiaries.ai
+      PORT: '3100'
+      SERVE_UI: 'true'
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    volumes:
+      - paperclip-data:/paperclip
+
+volumes:
+  paperclip-data:
+  pgdata:

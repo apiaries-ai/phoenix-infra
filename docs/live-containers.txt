@@ -1,0 +1,25 @@
+apiaries-backend	apiaries-trunk-apiaries-backend	0.0.0.0:8001->8000/tcp, [::]:8001->8000/tcp
+apiaries_crm	apiaries/crm:latest	0.0.0.0:8003->8000/tcp, [::]:8003->8000/tcp
+apiaries_db	postgres:16-alpine	0.0.0.0:5434->5432/tcp, [::]:5434->5432/tcp
+apiaries_frontend	nginx:alpine	0.0.0.0:3000->80/tcp, [::]:3000->80/tcp
+apiaries_memory_agent	apiaries-memory-agent-memory-agent:latest	8200/tcp
+authentik-db	postgres:16-alpine	5432/tcp
+authentik-redis	redis:alpine	6379/tcp
+authentik-server	ghcr.io/goauthentik/server:2024.12.3	0.0.0.0:9000->9000/tcp, [::]:9000->9000/tcp, 0.0.0.0:9443->9443/tcp, [::]:9443->9443/tcp
+authentik-worker	ghcr.io/goauthentik/server:2024.12.3	
+cloudflared	cloudflare/cloudflared:latest	
+ebee-api	python:3.12-slim	
+hermes-agent	agent0ai/agent-zero:latest	22/tcp, 9000-9009/tcp, 0.0.0.0:8181->80/tcp, [::]:8181->80/tcp
+hive-db	postgres:16-alpine	0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+langfuse-clickhouse	clickhouse/clickhouse-server:24.3	8123/tcp, 9000/tcp, 9009/tcp
+langfuse-minio	minio/minio	9000/tcp
+langfuse-pg	postgres:16	5432/tcp
+langfuse-redis	redis:7	6379/tcp
+langfuse-v3	langfuse/langfuse:3.22.0	0.0.0.0:3201->3201/tcp, [::]:3201->3201/tcp
+litellm-proxy	litellm-hive:latest	
+mattermost	mattermost/mattermost-team-edition:10.5	8067/tcp, 0.0.0.0:8065->8065/tcp, [::]:8065->8065/tcp, 8074-8075/tcp
+n8n	n8nio/n8n:latest	0.0.0.0:5678->5678/tcp, [::]:5678->5678/tcp
+nextcloud	nextcloud:stable	0.0.0.0:8888->80/tcp, [::]:8888->80/tcp
+paperclip	paperclip-server:latest	0.0.0.0:3100->3100/tcp, [::]:3100->3100/tcp
+paperclip-postgres	postgres:17	0.0.0.0:5435->5432/tcp, [::]:5435->5432/tcp
+stalwart	stalwartlabs/stalwart:latest	0.0.0.0:25->25/tcp, [::]:25->25/tcp, 110/tcp, 0.0.0.0:143->143/tcp, [::]:143->143/tcp, 0.0.0.0:465->465/tcp, [::]:465->465/tcp, 0.0.0.0:587->587/tcp, [::]:587->587/tcp, 443/tcp, 0.0.0.0:993->993/tcp, [::]:993->993/tcp, 0.0.0.0:4190->4190/tcp, [::]:4190->4190/tcp, 0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp, 995/tcp

@@ -1,0 +1,20 @@
+name: drift-check
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  push:
+
+jobs:
+  check:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check all compose stacks are running
+        run: |
+          ssh phoenix-lan 'docker ps --format "{{.Names}}" | sort' > /tmp/live.txt
+          grep -h "container_name:" stacks/*/docker-compose.yml \
+            | awk '{print $2}' | sort > /tmp/repo.txt
+          diff /tmp/live.txt /tmp/repo.txt \
+            && echo "✅ No stack drift" \
+            || (echo "❌ STACK DRIFT DETECTED" && exit 1)
