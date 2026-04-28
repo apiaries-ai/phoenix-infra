@@ -40,7 +40,7 @@ uid=1000(node) gid=1000(node)
 The image also contained a fallback `/app/.env` with:
 
 ```text
-DATABASE_URL=postgres://paperclip:paperclip2026@127.0.0.1:5432/paperclip
+DATABASE_URL=postgres://paperclip:<redacted>@127.0.0.1:5432/paperclip
 ```
 
 When the runtime config was not mounted at `/paperclip`, Paperclip fell back to the embedded/default local Postgres path and failed with `ECONNREFUSED 127.0.0.1:5432`.
@@ -64,7 +64,7 @@ services:
     container_name: paperclip-postgres
     environment:
       POSTGRES_USER: paperclip
-      POSTGRES_PASSWORD: paperclip2026
+      POSTGRES_PASSWORD: ${PAPERCLIP_POSTGRES_PASSWORD}
       POSTGRES_DB: paperclip
     command: ["postgres", "-c", "listen_addresses=*", "-c", "unix_socket_directories="]
     volumes:
@@ -90,7 +90,7 @@ services:
       SERVE_UI: "true"
       PAPERCLIP_HOME: /paperclip
       PAPERCLIP_CONFIG: /paperclip/instances/default/config.json
-      DATABASE_URL: postgres://paperclip:paperclip2026@paperclip-postgres:5432/paperclip
+      DATABASE_URL: postgres://paperclip:${PAPERCLIP_POSTGRES_PASSWORD}@paperclip-postgres:5432/paperclip
     ports:
       - "3100:3100"
     restart: unless-stopped
@@ -181,6 +181,7 @@ Observed size: `204M`.
 - Do not mount `/root/.paperclip` into `/root/.paperclip` for this container.
 - Do not use `paperclip_paperclip-data:/paperclip` unless it contains the corrected config and secrets.
 - Do not publish Postgres on host port `5435`.
+- Do not commit Paperclip database or auth secret values to this repo.
 - Do not run bash heredocs directly in fish on the Mac. Run heredocs inside SSH/bash or use `ssh host 'cat > file << "EOF" ... EOF'` carefully.
 - Do not override the image entrypoint to `/app/packages/server/dist/index.js`; the image CMD expects `server/dist/index.js` with the tsx loader.
 
