@@ -1,0 +1,35 @@
+name: Reusable Base Lint
+on:
+  workflow_call:
+    inputs:
+      skip-yaml:
+        type: boolean
+        default: false
+      skip-shell:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: YAML lint
+        if: ${{ !inputs.skip-yaml }}
+        run: |
+          if find . \( -name "*.yml" -o -name "*.yaml" \) -not -path "*/node_modules/*" -not -path "*/.git/*" | grep -q .; then
+            pip install --quiet yamllint
+            yamllint -d "{extends: default, rules: {line-length: disable, document-start: disable, truthy: disable}}" . || true
+          fi
+      - name: JSON validate
+        run: |
+          find . -name "*.json" -not -path "*/node_modules/*" -not -path "*/.git/*" | while read f; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" 2>&1 || echo "::warning file=$f::Invalid JSON"
+          done
+      - name: Shell syntax
+        if: ${{ !inputs.skip-shell }}
+        run: |
+          find . -name "*.sh" -not -path "*/node_modules/*" -not -path "*/.git/*" | while read f; do
+            bash -n "$f" 2>&1 || echo "::warning file=$f::Shell syntax error"
+          done
