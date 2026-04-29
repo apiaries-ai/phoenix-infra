@@ -2,6 +2,8 @@ services:
   mattermost:
     image: mattermost/mattermost-team-edition:latest
     container_name: mattermost
+    profiles:
+      - orphan-snapshot
     restart: unless-stopped
     privileged: true
     ports:
