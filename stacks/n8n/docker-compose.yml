@@ -2,6 +2,8 @@ services:
   n8n:
     image: n8nio/n8n:latest
     container_name: n8n
+    profiles:
+      - orphan-snapshot
     restart: unless-stopped
     ports:
       - "5678:5678"
