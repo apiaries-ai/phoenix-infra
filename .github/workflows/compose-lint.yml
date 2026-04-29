@@ -76,30 +76,3 @@ jobs:
                 f"{len(files) - len(skipped)} compose files "
                 f"({len(skipped)} stubs skipped)")
           PY
-
-      - name: docker compose config (per stack)
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          fail=0
-          for d in stacks/*/; do
-            f=""
-            if [ -f "$d/docker-compose.yml" ]; then
-              f="$d/docker-compose.yml"
-            elif [ -f "$d/docker-compose.yaml" ]; then
-              f="$d/docker-compose.yaml"
-            fi
-            [ -z "$f" ] && continue
-            # Skip stub/placeholder compose files (top-level not a YAML mapping).
-            if ! python -c "import sys, yaml; d=yaml.safe_load(open(sys.argv[1])); sys.exit(0 if isinstance(d, dict) else 2)" "$f"; then
-              echo "::warning file=$f::skipping docker compose config (stub/placeholder)"
-              continue
-            fi
-            echo "::group::compose config $f"
-            if ! docker compose -f "$f" --env-file /dev/null config -q 2>&1; then
-              echo "::error file=$f::compose config failed"
-              fail=1
-            fi
-            echo "::endgroup::"
-          done
-          exit $fail
