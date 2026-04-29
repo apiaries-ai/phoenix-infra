@@ -12,9 +12,11 @@ jobs:
 
       - name: Check all compose stacks are running
         run: |
-          ssh phoenix-lan 'docker ps --format "{{.Names}}" | sort' > /tmp/live.txt
-          grep -h "container_name:" stacks/*/docker-compose.yml \
-            | awk '{print $2}' | sort > /tmp/repo.txt
-          diff /tmp/live.txt /tmp/repo.txt \
-            && echo "✅ No stack drift" \
-            || (echo "❌ STACK DRIFT DETECTED" && exit 1)
+          docker ps --format "{{.Names}}" | sort > /tmp/live.txt
+          grep -h "container_name:" stacks/*/docker-compose.yml | awk '{print $2}' | sort -u > /tmp/repo.txt
+          if diff /tmp/live.txt /tmp/repo.txt; then
+            echo "✅ No stack drift"
+          else
+            echo "❌ STACK DRIFT DETECTED"
+            exit 1
+          fi
