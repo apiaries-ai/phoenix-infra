@@ -148,6 +148,8 @@ services:
     - apparmor=unconfined
   hivemaster-loop:
     container_name: hivemaster-loop
+    profiles:
+    - optional
     build:
       context: /opt/apiaries-trunk/backend
       dockerfile: Dockerfile

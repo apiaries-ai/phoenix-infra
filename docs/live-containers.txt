@@ -21,5 +21,5 @@ mattermost	mattermost/mattermost-team-edition:10.5	8067/tcp, 0.0.0.0:8065->8065/
 n8n	n8nio/n8n:latest	0.0.0.0:5678->5678/tcp, [::]:5678->5678/tcp
 nextcloud	nextcloud:stable	0.0.0.0:8888->80/tcp, [::]:8888->80/tcp
 paperclip	paperclip-server:latest	0.0.0.0:3100->3100/tcp, [::]:3100->3100/tcp
-paperclip-postgres	postgres:17	0.0.0.0:5435->5432/tcp, [::]:5435->5432/tcp
+paperclip-postgres	postgres:17	5432/tcp
 stalwart	stalwartlabs/stalwart:latest	0.0.0.0:25->25/tcp, [::]:25->25/tcp, 110/tcp, 0.0.0.0:143->143/tcp, [::]:143->143/tcp, 0.0.0.0:465->465/tcp, [::]:465->465/tcp, 0.0.0.0:587->587/tcp, [::]:587->587/tcp, 443/tcp, 0.0.0.0:993->993/tcp, [::]:993->993/tcp, 0.0.0.0:4190->4190/tcp, [::]:4190->4190/tcp, 0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp, 995/tcp

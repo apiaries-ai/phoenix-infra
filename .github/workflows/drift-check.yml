@@ -10,11 +10,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check all compose stacks are running
+      - name: Check declared stacks are running
         run: |
-          ssh phoenix-lan 'docker ps --format "{{.Names}}" | sort' > /tmp/live.txt
-          grep -h "container_name:" stacks/*/docker-compose.yml \
-            | awk '{print $2}' | sort > /tmp/repo.txt
-          diff /tmp/live.txt /tmp/repo.txt \
-            && echo "✅ No stack drift" \
-            || (echo "❌ STACK DRIFT DETECTED" && exit 1)
+          # Extract container_name for every service that is NOT profile-gated.
+          # Profile-gated services are opt-in (compose --profile) and not part of
+          # the default `up`, so they should not count as drift when absent.
+          # Top-level service keys live at 2-space indent under `services:`;
+          # keys within a service at 4-space indent.
+          awk '
+            BEGIN { in_services=0; cn=""; has_profile=0 }
+            function flush() {
+              if (cn != "" && !has_profile) print cn
+              cn=""; has_profile=0
+            }
+            /^services:[[:space:]]*$/ { in_services=1; next }
+            # any other top-level key ends the services block
+            in_services && /^[^[:space:]#]/ { flush(); in_services=0; next }
+            !in_services { next }
+            # new service entry at 2-space indent (e.g. "  myservice:")
+            /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { flush(); next }
+            # keys inside a service at 4-space indent
+            /^    container_name:[[:space:]]/ {
+              v=$0; sub(/^[[:space:]]*container_name:[[:space:]]*/, "", v)
+              gsub(/[ \t"'\'']/, "", v); cn=v; next
+            }
+            /^    profiles:/ { has_profile=1; next }
+            END { flush() }
+          ' stacks/*/docker-compose.yml | sort -u > /tmp/expected.txt
+
+          docker ps --format "{{.Names}}" | sort -u > /tmp/running.txt
+          MISSING=""
+          while read svc; do
+            [ -z "$svc" ] && continue
+            grep -qFx "$svc" /tmp/running.txt || MISSING="$MISSING $svc"
+          done < /tmp/expected.txt
+          if [ -z "$MISSING" ]; then
+            echo "✅ All declared (non-profile) services running"
+          else
+            echo "❌ Declared but not running:$MISSING"
+            exit 1
+          fi

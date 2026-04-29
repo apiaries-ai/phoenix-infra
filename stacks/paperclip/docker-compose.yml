@@ -4,22 +4,20 @@ services:
     container_name: paperclip-postgres
     environment:
       POSTGRES_USER: paperclip
-      POSTGRES_PASSWORD: paperclip2026
+      POSTGRES_PASSWORD: ${PAPERCLIP_POSTGRES_PASSWORD:?set PAPERCLIP_POSTGRES_PASSWORD}
       POSTGRES_DB: paperclip
-    command: ["postgres", "-c", "unix_socket_directories="]
-    ports:
-      - "5435:5432"
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "unix_socket_directories="]
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - paperclip_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U paperclip || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 15
+      retries: 20
       start_period: 10s
 
-  server:
+  paperclip:
     image: paperclip-server:latest
     container_name: paperclip
     privileged: true
@@ -27,19 +25,23 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      BETTER_AUTH_SECRET: hive-paperclip-secret-2026
-      DATABASE_URL: postgres://paperclip:paperclip2026@172.17.0.1:5435/paperclip
+      NODE_ENV: production
+      PORT: "3100"
+      SERVE_UI: "true"
+      PAPERCLIP_HOME: /paperclip
+      PAPERCLIP_CONFIG: /paperclip/instances/default/config.json
+      DATABASE_URL: postgres://paperclip:${PAPERCLIP_POSTGRES_PASSWORD:?set PAPERCLIP_POSTGRES_PASSWORD}@paperclip-postgres:5432/paperclip
+      BETTER_AUTH_SECRET: ${PAPERCLIP_BETTER_AUTH_SECRET:?set PAPERCLIP_BETTER_AUTH_SECRET}
       PAPERCLIP_DEPLOYMENT_EXPOSURE: private
       PAPERCLIP_DEPLOYMENT_MODE: authenticated
-      PAPERCLIP_PUBLIC_URL: https://paperclip.apiaries.ai
-      PORT: '3100'
-      SERVE_UI: 'true'
+      PAPERCLIP_PUBLIC_URL: ${PAPERCLIP_PUBLIC_URL:-https://paperclip.apiaries.ai}
     ports:
       - "3100:3100"
     restart: unless-stopped
     volumes:
-      - paperclip-data:/paperclip
+      - paperclip_runtime:/paperclip
 
 volumes:
-  paperclip-data:
-  pgdata:
+  paperclip_pgdata:
+  paperclip_runtime:
+    external: true

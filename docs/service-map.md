@@ -1,10 +1,10 @@
 # Phoenix Service Map — Canonical Source of Truth
-# Last verified: 2026-04-20
+# Last verified: mixed; Paperclip updated 2026-04-28
 
 | Container | Image | Port | Stack Dir | Tunnel Hostname | Notes |
 |---|---|---|---|---|---|
 | paperclip | paperclip-server:latest | 3100 | stacks/paperclip | paperclip.apiaries.ai | CEO agent host |
-| paperclip-postgres | postgres:17 | 5435 | stacks/paperclip | — | |
+| paperclip-postgres | postgres:17 | internal-only 5432/tcp | stacks/paperclip | — | no host 5435 publish |
 | n8n | n8nio/n8n | 5678 | stacks/n8n | n8n.apiaries.ai | |
 | langfuse-v3 | langfuse/langfuse | 3201 | stacks/langfuse | langfuse.apiaries.ai | |
 | langfuse-pg | postgres | — | stacks/langfuse | — | |
