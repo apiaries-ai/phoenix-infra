@@ -21,6 +21,8 @@ services:
   backend:
     image: apiaries-backend:local
     container_name: apiaries_backend
+    profiles:
+      - local-dev
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_DB: apiaries
