@@ -2,6 +2,7 @@ services:
   nextcloud:
     image: nextcloud:stable
     container_name: nextcloud
+    profiles: ["nextcloud"]
     restart: unless-stopped
     ports:
       - "8888:80"

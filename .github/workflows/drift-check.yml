@@ -3,50 +3,62 @@ on:
   schedule:
     - cron: '0 */6 * * *'
   push:
+  workflow_dispatch:
+    inputs:
+      ignore:
+        description: 'Comma-separated service/container names to ignore'
+        required: false
+        default: ''
 
 jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install yq
+        env:
+          YQ_VERSION: v4.44.3
+          YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
+        run: |
+          wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -O yq
+          echo "${YQ_SHA256}  yq" | sha256sum -c -
+          chmod +x yq
+          mkdir -p "$RUNNER_TEMP/bin"
+          mv yq "$RUNNER_TEMP/bin/yq"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          yq --version
+
+      - name: Install bats-core
+        run: |
+          git clone --depth 1 --branch v1.11.1 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          sudo /tmp/bats-core/install.sh /usr/local
+          bats --version
+
+      - name: Run drift-check tests
+        run: bats scripts/tests/drift-check.bats
+
   check:
     runs-on: self-hosted
+    env:
+      DRIFT_IGNORE: ${{ inputs.ignore || '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Install yq
+        env:
+          YQ_VERSION: v4.44.3
+          YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
+        run: |
+          wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -O yq
+          echo "${YQ_SHA256}  yq" | sha256sum -c -
+          chmod +x yq
+          mkdir -p "$RUNNER_TEMP/bin"
+          mv yq "$RUNNER_TEMP/bin/yq"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          yq --version
 
       - name: Check declared stacks are running
-        run: |
-          # Extract container_name for every service that is NOT profile-gated.
-          # Profile-gated services are opt-in (compose --profile) and not part of
-          # the default `up`, so they should not count as drift when absent.
-          # Top-level service keys live at 2-space indent under `services:`;
-          # keys within a service at 4-space indent.
-          awk '
-            BEGIN { in_services=0; cn=""; has_profile=0 }
-            function flush() {
-              if (cn != "" && !has_profile) print cn
-              cn=""; has_profile=0
-            }
-            /^services:[[:space:]]*$/ { in_services=1; next }
-            # any other top-level key ends the services block
-            in_services && /^[^[:space:]#]/ { flush(); in_services=0; next }
-            !in_services { next }
-            # new service entry at 2-space indent (e.g. "  myservice:")
-            /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { flush(); next }
-            # keys inside a service at 4-space indent
-            /^    container_name:[[:space:]]/ {
-              v=$0; sub(/^[[:space:]]*container_name:[[:space:]]*/, "", v)
-              gsub(/[ \t"'\'']/, "", v); cn=v; next
-            }
-            /^    profiles:/ { has_profile=1; next }
-            END { flush() }
-          ' stacks/*/docker-compose.yml | sort -u > /tmp/expected.txt
-
-          docker ps --format "{{.Names}}" | sort -u > /tmp/running.txt
-          MISSING=""
-          while read svc; do
-            [ -z "$svc" ] && continue
-            grep -qFx "$svc" /tmp/running.txt || MISSING="$MISSING $svc"
-          done < /tmp/expected.txt
-          if [ -z "$MISSING" ]; then
-            echo "✅ All declared (non-profile) services running"
-          else
-            echo "❌ Declared but not running:$MISSING"
-            exit 1
-          fi
+        run: bash scripts/drift-check.sh
