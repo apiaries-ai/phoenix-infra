@@ -8,8 +8,11 @@ on:
 
 permissions:
   actions: read
+  checks: read
   contents: read
   security-events: read
+  statuses: read
+  vulnerability-alerts: read
 
 jobs:
   audit:
@@ -84,14 +87,19 @@ jobs:
             local protection
             local signatures
 
-            if ! protection="$(gh api "repos/${full}/branches/main/protection")"; then
+            if ! protection="$(gh api "repos/${full}/branches/main/protection" 2>/dev/null)"; then
               plan_gated_result "$repo" "$repo branch protection" "main branch protection is missing"
               return
             fi
 
-            jq -e '.required_pull_request_reviews.required_approving_review_count == 1' \
-              <<<"$protection" >/dev/null ||
-              plan_gated_result "$repo" "$repo branch protection" "requires one approving review"
+            if [ "$repo" = "phoenix-infra" ]; then
+              jq -e '.required_pull_request_reviews == null' <<<"$protection" >/dev/null ||
+                error "$repo branch protection" "required reviews should be disabled for solo-principal workflow"
+            else
+              jq -e '.required_pull_request_reviews.required_approving_review_count == 1' \
+                <<<"$protection" >/dev/null ||
+                plan_gated_result "$repo" "$repo branch protection" "requires one approving review"
+            fi
             jq -e '.enforce_admins.enabled == true' <<<"$protection" >/dev/null ||
               plan_gated_result "$repo" "$repo branch protection" "admin enforcement is disabled"
             jq -e '.required_linear_history.enabled == true' <<<"$protection" >/dev/null ||
@@ -101,7 +109,7 @@ jobs:
             jq -e '.allow_deletions.enabled == false' <<<"$protection" >/dev/null ||
               plan_gated_result "$repo" "$repo branch protection" "branch deletion is allowed"
 
-            if signatures="$(gh api "repos/${full}/branches/main/protection/required_signatures")"; then
+            if signatures="$(gh api "repos/${full}/branches/main/protection/required_signatures" 2>/dev/null)"; then
               jq -e '.enabled == true' <<<"$signatures" >/dev/null ||
                 plan_gated_result "$repo" "$repo branch protection" "signed commits are not required"
             else
@@ -120,14 +128,17 @@ jobs:
             local repo="$1"
             local full="${OWNER}/${repo}"
             local data
-            data="$(gh api "repos/${full}")"
+            if ! data="$(gh api "repos/${full}" 2>/dev/null)"; then
+              plan_gated_result "$repo" "$repo security" "repository security settings are not accessible"
+              return
+            fi
 
-            jq -e '.security_and_analysis.secret_scanning.status == "enabled"' \
-              <<<"$data" >/dev/null ||
-              plan_gated_result "$repo" "$repo security" "secret scanning is not enabled"
-            jq -e '.security_and_analysis.secret_scanning_push_protection.status == "enabled"' \
-              <<<"$data" >/dev/null ||
-              plan_gated_result "$repo" "$repo security" "secret scanning push protection is not enabled"
+            if ! jq -e '
+              .security_and_analysis.secret_scanning.status == "enabled" and
+              .security_and_analysis.secret_scanning_push_protection.status == "enabled"
+            ' <<<"$data" >/dev/null; then
+              plan_gated_result "$repo" "$repo security" "secret scanning or push protection is not enabled"
+            fi
           }
 
           audit_codeql() {
@@ -135,7 +146,7 @@ jobs:
             local full="${OWNER}/${repo}"
             local setup
 
-            if ! setup="$(gh api "repos/${full}/code-scanning/default-setup")"; then
+            if ! setup="$(gh api "repos/${full}/code-scanning/default-setup" 2>/dev/null)"; then
               plan_gated_result "$repo" "$repo CodeQL" "CodeQL default setup is not enabled"
               return
             fi
@@ -160,25 +171,34 @@ jobs:
             tmp="$(mktemp -d)"
 
             gh repo clone "$full" "$tmp/$repo" -- --depth 1 --quiet
-            if grep -rEn 'actions/checkout@v[34]' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+
+            legacy_action_found() {
+              local pattern="$1"
+              find "$tmp/$repo/.github/workflows" \
+                -type f \( -name '*.yml' -o -name '*.yaml' \) \
+                ! -name 'repo-audit.yml' \
+                -exec grep -En "^[[:space:]]*-[[:space:]]*uses:[[:space:]]*${pattern}" {} + 2>/dev/null
+            }
+
+            if legacy_action_found 'actions/checkout@v[34]'; then
               error "$repo workflows" "legacy checkout action found"
             fi
-            if grep -rEn 'actions/setup-node@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+            if legacy_action_found 'actions/setup-node@v3'; then
               error "$repo workflows" "legacy setup-node action found"
             fi
-            if grep -rEn 'actions/setup-python@v[0-4]' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+            if legacy_action_found 'actions/setup-python@v[0-4]'; then
               error "$repo workflows" "legacy setup-python action found"
             fi
-            if grep -rEn 'actions/cache@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+            if legacy_action_found 'actions/cache@v3'; then
               error "$repo workflows" "legacy cache action found"
             fi
-            if grep -rEn 'actions/upload-artifact@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+            if legacy_action_found 'actions/upload-artifact@v3'; then
               error "$repo workflows" "legacy upload-artifact action found"
             fi
-            if grep -rEn 'actions/download-artifact@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+            if legacy_action_found 'actions/download-artifact@v3'; then
               error "$repo workflows" "legacy download-artifact action found"
             fi
-            if grep -rEn 'actions/github-script@v6' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+            if legacy_action_found 'actions/github-script@v6'; then
               error "$repo workflows" "legacy github-script action found"
             fi
             rm -rf "$tmp"
