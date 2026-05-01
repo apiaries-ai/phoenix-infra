@@ -1,0 +1,138 @@
+name: repo-audit
+
+on:
+  schedule:
+    # Mondays 09:00 CDT.
+    - cron: '0 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.ORG_REPO_AUDIT_TOKEN || github.token }}
+      OWNER: apiaries-ai
+      IN_SCOPE_REPOS: phoenix-infra apiaries-trunk easypawn-site
+      OUT_OF_SCOPE_REPOS: easy-pawn easypawn
+    steps:
+      - name: Audit repository invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fail=0
+
+          error() {
+            local title="$1"
+            local message="$2"
+            echo "::error title=${title}::${message}"
+            fail=1
+          }
+
+          assert_scope() {
+            for excluded in ${OUT_OF_SCOPE_REPOS}; do
+              for repo in ${IN_SCOPE_REPOS}; do
+                if [ "$repo" = "$excluded" ]; then
+                  error "scope-creep" "$excluded must not be in repo-audit scope"
+                fi
+              done
+            done
+          }
+
+          has_context() {
+            local json="$1"
+            local context="$2"
+            jq -e --arg context "$context" '
+              (.required_status_checks.contexts // []) | index($context)
+            ' <<<"$json" >/dev/null
+          }
+
+          audit_branch_protection() {
+            local repo="$1"
+            local full="${OWNER}/${repo}"
+            local protection
+            local signatures
+
+            if ! protection="$(gh api "repos/${full}/branches/main/protection")"; then
+              error "$repo branch protection" "main branch protection is missing"
+              return
+            fi
+
+            jq -e '.required_pull_request_reviews.required_approving_review_count == 1' \
+              <<<"$protection" >/dev/null ||
+              error "$repo branch protection" "requires one approving review"
+            jq -e '.enforce_admins.enabled == true' <<<"$protection" >/dev/null ||
+              error "$repo branch protection" "admin enforcement is disabled"
+            jq -e '.required_linear_history.enabled == true' <<<"$protection" >/dev/null ||
+              error "$repo branch protection" "linear history is disabled"
+            jq -e '.allow_force_pushes.enabled == false' <<<"$protection" >/dev/null ||
+              error "$repo branch protection" "force pushes are allowed"
+            jq -e '.allow_deletions.enabled == false' <<<"$protection" >/dev/null ||
+              error "$repo branch protection" "branch deletion is allowed"
+
+            if signatures="$(gh api "repos/${full}/branches/main/protection/required_signatures")"; then
+              jq -e '.enabled == true' <<<"$signatures" >/dev/null ||
+                error "$repo branch protection" "signed commits are not required"
+            else
+              error "$repo branch protection" "signed commit protection is missing"
+            fi
+
+            if [ "$repo" = "phoenix-infra" ]; then
+              has_context "$protection" check ||
+                error "$repo branch protection" "required check context 'check' missing"
+              has_context "$protection" ci ||
+                error "$repo branch protection" "required check context 'ci' missing"
+            fi
+          }
+
+          audit_security() {
+            local repo="$1"
+            local full="${OWNER}/${repo}"
+            local data
+            data="$(gh api "repos/${full}")"
+
+            jq -e '.security_and_analysis.secret_scanning.status == "enabled"' \
+              <<<"$data" >/dev/null ||
+              error "$repo security" "secret scanning is not enabled"
+            jq -e '.security_and_analysis.secret_scanning_push_protection.status == "enabled"' \
+              <<<"$data" >/dev/null ||
+              error "$repo security" "secret scanning push protection is not enabled"
+          }
+
+          audit_dependabot() {
+            local repo="$1"
+            local full="${OWNER}/${repo}"
+            gh api "repos/${full}/contents/.github/dependabot.yml?ref=main" >/dev/null ||
+              error "$repo dependabot" ".github/dependabot.yml is missing"
+          }
+
+          audit_workflows() {
+            local repo="$1"
+            local full="${OWNER}/${repo}"
+            local tmp
+            tmp="$(mktemp -d)"
+
+            gh repo clone "$full" "$tmp/$repo" -- --depth 1 --quiet
+            if grep -rEn 'actions/checkout@v[34]' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy checkout action found"
+            fi
+            if grep -rEn 'actions/setup-python@v[0-4]' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy setup-python action found"
+            fi
+            rm -rf "$tmp"
+          }
+
+          assert_scope
+          for repo in ${IN_SCOPE_REPOS}; do
+            audit_branch_protection "$repo"
+            audit_security "$repo"
+            audit_dependabot "$repo"
+            audit_workflows "$repo"
+          done
+
+          exit "$fail"
