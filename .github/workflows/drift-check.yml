@@ -14,7 +14,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install yq
         env:
@@ -44,7 +44,7 @@ jobs:
     env:
       DRIFT_IGNORE: ${{ inputs.ignore || '' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install yq
         env:
