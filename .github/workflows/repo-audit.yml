@@ -19,6 +19,7 @@ jobs:
       OWNER: apiaries-ai
       IN_SCOPE_REPOS: phoenix-infra apiaries-trunk easypawn-site
       OUT_OF_SCOPE_REPOS: easy-pawn easypawn
+      PLAN_GATED_REPOS: "apiaries-trunk,easypawn-site"
     steps:
       - name: Audit repository invariants
         shell: bash
@@ -32,6 +33,31 @@ jobs:
             local message="$2"
             echo "::error title=${title}::${message}"
             fail=1
+          }
+
+          warn() {
+            local title="$1"
+            local message="$2"
+            echo "::warning title=${title}::${message}"
+          }
+
+          is_plan_gated() {
+            local repo="$1"
+            case ",${PLAN_GATED_REPOS}," in
+              *,"${repo}",*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          plan_gated_result() {
+            local repo="$1"
+            local title="$2"
+            local message="$3"
+            if is_plan_gated "$repo"; then
+              warn "$title" "$message"
+            else
+              error "$title" "$message"
+            fi
           }
 
           assert_scope() {
@@ -59,27 +85,27 @@ jobs:
             local signatures
 
             if ! protection="$(gh api "repos/${full}/branches/main/protection")"; then
-              error "$repo branch protection" "main branch protection is missing"
+              plan_gated_result "$repo" "$repo branch protection" "main branch protection is missing"
               return
             fi
 
             jq -e '.required_pull_request_reviews.required_approving_review_count == 1' \
               <<<"$protection" >/dev/null ||
-              error "$repo branch protection" "requires one approving review"
+              plan_gated_result "$repo" "$repo branch protection" "requires one approving review"
             jq -e '.enforce_admins.enabled == true' <<<"$protection" >/dev/null ||
-              error "$repo branch protection" "admin enforcement is disabled"
+              plan_gated_result "$repo" "$repo branch protection" "admin enforcement is disabled"
             jq -e '.required_linear_history.enabled == true' <<<"$protection" >/dev/null ||
-              error "$repo branch protection" "linear history is disabled"
+              plan_gated_result "$repo" "$repo branch protection" "linear history is disabled"
             jq -e '.allow_force_pushes.enabled == false' <<<"$protection" >/dev/null ||
-              error "$repo branch protection" "force pushes are allowed"
+              plan_gated_result "$repo" "$repo branch protection" "force pushes are allowed"
             jq -e '.allow_deletions.enabled == false' <<<"$protection" >/dev/null ||
-              error "$repo branch protection" "branch deletion is allowed"
+              plan_gated_result "$repo" "$repo branch protection" "branch deletion is allowed"
 
             if signatures="$(gh api "repos/${full}/branches/main/protection/required_signatures")"; then
               jq -e '.enabled == true' <<<"$signatures" >/dev/null ||
-                error "$repo branch protection" "signed commits are not required"
+                plan_gated_result "$repo" "$repo branch protection" "signed commits are not required"
             else
-              error "$repo branch protection" "signed commit protection is missing"
+              plan_gated_result "$repo" "$repo branch protection" "signed commit protection is missing"
             fi
 
             if [ "$repo" = "phoenix-infra" ]; then
@@ -98,17 +124,33 @@ jobs:
 
             jq -e '.security_and_analysis.secret_scanning.status == "enabled"' \
               <<<"$data" >/dev/null ||
-              error "$repo security" "secret scanning is not enabled"
+              plan_gated_result "$repo" "$repo security" "secret scanning is not enabled"
             jq -e '.security_and_analysis.secret_scanning_push_protection.status == "enabled"' \
               <<<"$data" >/dev/null ||
-              error "$repo security" "secret scanning push protection is not enabled"
+              plan_gated_result "$repo" "$repo security" "secret scanning push protection is not enabled"
           }
 
-          audit_dependabot() {
+          audit_codeql() {
             local repo="$1"
             local full="${OWNER}/${repo}"
-            gh api "repos/${full}/contents/.github/dependabot.yml?ref=main" >/dev/null ||
-              error "$repo dependabot" ".github/dependabot.yml is missing"
+            local setup
+
+            if ! setup="$(gh api "repos/${full}/code-scanning/default-setup")"; then
+              plan_gated_result "$repo" "$repo CodeQL" "CodeQL default setup is not enabled"
+              return
+            fi
+
+            jq -e '.state == "configured"' <<<"$setup" >/dev/null ||
+              plan_gated_result "$repo" "$repo CodeQL" "CodeQL default setup is not configured"
+          }
+
+          audit_required_file() {
+            local repo="$1"
+            local path="$2"
+            local label="$3"
+            local full="${OWNER}/${repo}"
+            gh api "repos/${full}/contents/${path}?ref=main" >/dev/null ||
+              error "$repo $label" "$path is missing"
           }
 
           audit_workflows() {
@@ -121,8 +163,23 @@ jobs:
             if grep -rEn 'actions/checkout@v[34]' "$tmp/$repo/.github/workflows" 2>/dev/null; then
               error "$repo workflows" "legacy checkout action found"
             fi
+            if grep -rEn 'actions/setup-node@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy setup-node action found"
+            fi
             if grep -rEn 'actions/setup-python@v[0-4]' "$tmp/$repo/.github/workflows" 2>/dev/null; then
               error "$repo workflows" "legacy setup-python action found"
+            fi
+            if grep -rEn 'actions/cache@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy cache action found"
+            fi
+            if grep -rEn 'actions/upload-artifact@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy upload-artifact action found"
+            fi
+            if grep -rEn 'actions/download-artifact@v3' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy download-artifact action found"
+            fi
+            if grep -rEn 'actions/github-script@v6' "$tmp/$repo/.github/workflows" 2>/dev/null; then
+              error "$repo workflows" "legacy github-script action found"
             fi
             rm -rf "$tmp"
           }
@@ -131,7 +188,10 @@ jobs:
           for repo in ${IN_SCOPE_REPOS}; do
             audit_branch_protection "$repo"
             audit_security "$repo"
-            audit_dependabot "$repo"
+            audit_codeql "$repo"
+            audit_required_file "$repo" ".github/dependabot.yml" "dependabot"
+            audit_required_file "$repo" ".github/CODEOWNERS" "CODEOWNERS"
+            audit_required_file "$repo" "SECURITY.md" "security policy"
             audit_workflows "$repo"
           done
 
