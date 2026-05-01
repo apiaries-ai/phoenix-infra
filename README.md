@@ -1,5 +1,7 @@
 # Phoenix Infrastructure
 
+[![drift-check](https://github.com/apiaries-ai/phoenix-infra/actions/workflows/drift-check.yml/badge.svg?branch=main)](https://github.com/apiaries-ai/phoenix-infra/actions/workflows/drift-check.yml)
+
 ## Phoenix Paperclip Operations
 
 Paperclip was recovered on Phoenix on 2026-04-28. The current operating model is:
